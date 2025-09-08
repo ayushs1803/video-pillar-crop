@@ -1,0 +1,100 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_url:
+        description: 'Optional: URL to a ZIP or 7z containing ffmpeg.exe (leave blank to NOT bundle ffmpeg)'
+        required: false
+        default: ''
+  push:
+    branches:
+      - main
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          # ensure full history (not required usually) and fetch all files
+          fetch-depth: 0
+
+      - name: Show runner details
+        run: |
+          echo "Runner OS: $RUNNER_OS"
+          echo "Working dir:"
+          pwd
+          echo "List root files"
+          dir
+
+      - name: Show .github/workflows and print top of script (debug)
+        run: |
+          echo "LIST repo root (ls -la equivalent)"
+          Get-ChildItem -Force -File | Select-Object Name,Length
+          echo "Look for video_pillar_crop.py"
+          if (Test-Path ".\\video_pillar_crop.py") {
+            Write-Host "video_pillar_crop.py exists in repo root. Showing first 40 lines:"
+            Get-Content .\\video_pillar_crop.py -TotalCount 40
+          } else {
+            Write-Host "ERROR: video_pillar_crop.py not found in repo root."
+            Write-Host "Listing all files recursively (to help locate it):"
+            Get-ChildItem -Recurse | Select-Object FullName | ForEach-Object { $_.FullName }
+            exit 1
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --disable-pip-version-check pyinstaller pillow
+
+      - name: Build one-file EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --console --name video_pillar_crop video_pillar_crop.py
+
+      - name: Optionally download ffmpeg (if ffmpeg_url provided)
+        if: ${{ github.event.inputs.ffmpeg_url != '' }}
+        shell: pwsh
+        run: |
+          $url = '${{ github.event.inputs.ffmpeg_url }}'
+          Write-Host "Downloading ffmpeg from $url"
+          $out = Join-Path $env:RUNNER_TEMP 'ffmpeg_bundle.zip'
+          Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -ErrorAction Stop
+          try {
+            Expand-Archive -Path $out -DestinationPath "$env:RUNNER_TEMP\ffmpeg_extracted" -Force
+          } catch {
+            Write-Host "Expand-Archive failed; attempting 7zip if available"
+            & 'C:\Program Files\7-Zip\7z.exe' x $out -o"$env:RUNNER_TEMP\ffmpeg_extracted" | Out-Null
+          }
+          $ff = Get-ChildItem -Path "$env:RUNNER_TEMP\ffmpeg_extracted" -Filter "ffmpeg.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $ff) {
+            Write-Error "Could not find ffmpeg.exe inside the downloaded archive"
+            exit 1
+          }
+          Copy-Item $ff.FullName -Destination "./dist" -Force
+          Write-Host "ffmpeg.exe copied to dist folder"
+
+      - name: Package EXE for artifact
+        run: |
+          $dst = "dist"
+          $zipname = "video_pillar_crop_windows.zip"
+          if (Test-Path $dst) {
+            Compress-Archive -Path "$dst\*" -DestinationPath $zipname -Force
+            Write-Host "Created $zipname"
+          } else {
+            Write-Error "dist folder not found; build likely failed"
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video_pillar_crop-windows
+          path: video_pillar_crop_windows.zip
