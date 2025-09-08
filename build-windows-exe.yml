@@ -18,19 +18,37 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # ensure full history (not required usually) and fetch all files
+          fetch-depth: 0
+
+      - name: Show runner details
+        run: |
+          echo "Runner OS: $RUNNER_OS"
+          echo "Working dir:"
+          pwd
+          echo "List root files"
+          dir
+
+      - name: Show .github/workflows and print top of script (debug)
+        run: |
+          echo "LIST repo root (ls -la equivalent)"
+          Get-ChildItem -Force -File | Select-Object Name,Length
+          echo "Look for video_pillar_crop.py"
+          if (Test-Path ".\\video_pillar_crop.py") {
+            Write-Host "video_pillar_crop.py exists in repo root. Showing first 40 lines:"
+            Get-Content .\\video_pillar_crop.py -TotalCount 40
+          } else {
+            Write-Host "ERROR: video_pillar_crop.py not found in repo root."
+            Write-Host "Listing all files recursively (to help locate it):"
+            Get-ChildItem -Recurse | Select-Object FullName | ForEach-Object { $_.FullName }
+            exit 1
+          }
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
 
       - name: Install build dependencies
         run: |
