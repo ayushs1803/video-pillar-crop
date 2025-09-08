@@ -53,12 +53,12 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --disable-pip-version-check pyinstaller pillow
+          pip install --disable-pip-version-check pyinstaller pillow numpy
 
       - name: Build one-file EXE with PyInstaller
         run: |
-          pyinstaller --onefile --console --name video_pillar_crop video_pillar_crop.py
-
+          pyinstaller --onefile --console --name video_pillar_crop --hidden-import=numpy video_pillar_crop.py
+          
       - name: Optionally download ffmpeg (if ffmpeg_url provided)
         if: ${{ github.event.inputs.ffmpeg_url != '' }}
         shell: pwsh
